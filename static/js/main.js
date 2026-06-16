@@ -11,7 +11,8 @@ const refreshBtn = document.getElementById("refresh-btn");
 const refreshIcon = document.getElementById("refresh-icon");
 const searchInput = document.getElementById("search-input");
 const filterButtons = document.querySelectorAll(".filter-btn");
-const themeToggleBtn = document.getElementById("theme-toggle");
+const themeCheckbox = document.getElementById("theme-checkbox");
+const exportCsvBtn = document.getElementById("export-csv-btn");
 const selectAllCheckbox = document.getElementById("select-all-checkbox");
 const selectionDrawer = document.getElementById("selection-drawer");
 const selectedCountBadge = document.getElementById("selected-count-badge");
@@ -29,6 +30,7 @@ document.addEventListener("DOMContentLoaded", () => {
   clearSelectionBtn.addEventListener("click", clearSelection);
   tweetSelectedBtn.addEventListener("click", tweetSelected);
   selectAllCheckbox.addEventListener("change", handleSelectAll);
+  exportCsvBtn.addEventListener("click", handleExportCSV);
 
   // Filter Buttons
   filterButtons.forEach(btn => {
@@ -41,28 +43,60 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 });
 
-// Theme Management
+// Theme Management (Toggle Switch)
 function initTheme() {
   const savedTheme = localStorage.getItem("theme") || "dark";
   document.documentElement.setAttribute("data-theme", savedTheme);
-  updateThemeIcon(savedTheme);
+  
+  // checkbox checked = light theme, unchecked = dark theme
+  themeCheckbox.checked = (savedTheme === "light");
 
-  themeToggleBtn.addEventListener("click", () => {
-    const currentTheme = document.documentElement.getAttribute("data-theme");
-    const newTheme = currentTheme === "dark" ? "light" : "dark";
+  themeCheckbox.addEventListener("change", () => {
+    const newTheme = themeCheckbox.checked ? "light" : "dark";
     document.documentElement.setAttribute("data-theme", newTheme);
     localStorage.setItem("theme", newTheme);
-    updateThemeIcon(newTheme);
   });
 }
 
-function updateThemeIcon(theme) {
-  const icon = themeToggleBtn.querySelector("i");
-  if (theme === "light") {
-    icon.className = "fa-solid fa-sun";
-  } else {
-    icon.className = "fa-solid fa-moon";
+// Export to CSV Handler
+function handleExportCSV() {
+  const searchQuery = searchInput.value.toLowerCase().trim();
+  const filteredNotes = allNotes.filter(note => {
+    const matchesFilter = currentFilter === "all" || note.type.toLowerCase() === currentFilter;
+    const textToSearch = `${note.date} ${note.type} ${note.description}`.toLowerCase();
+    const matchesSearch = !searchQuery || textToSearch.includes(searchQuery);
+    return matchesFilter && matchesSearch;
+  });
+
+  if (filteredNotes.length === 0) {
+    showToast("No updates to export!");
+    return;
   }
+
+  const headers = ["Date", "Category", "Link", "Description"];
+  const rows = filteredNotes.map(note => {
+    const tempDiv = document.createElement("div");
+    tempDiv.innerHTML = note.description;
+    const plainText = (tempDiv.textContent || tempDiv.innerText || "").replace(/"/g, '""').trim();
+    return [
+      `"${note.date}"`,
+      `"${note.type}"`,
+      `"${note.link}"`,
+      `"${plainText}"`
+    ].join(",");
+  });
+
+  const csvString = [headers.join(","), ...rows].join("\n");
+  const blob = new Blob([csvString], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  
+  const link = document.createElement("a");
+  link.setAttribute("href", url);
+  link.setAttribute("download", `bigquery_release_notes_${new Date().toISOString().slice(0, 10)}.csv`);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  showToast(`Exported ${filteredNotes.length} updates to CSV!`);
 }
 
 // Fetch Notes from API
@@ -158,6 +192,9 @@ function renderNotesGrid(notes) {
         ${note.description}
       </div>
       <div class="note-card-footer">
+        <button class="btn-card-action copy-text" title="Copy update text">
+          <i class="fa-regular fa-copy"></i>
+        </button>
         <button class="btn-card-action copy-link" title="Copy original link">
           <i class="fa-solid fa-link"></i>
         </button>
@@ -185,6 +222,17 @@ function renderNotesGrid(notes) {
         checkbox.checked = isChecked;
         toggleNoteSelection(note.id, isChecked);
       }
+    });
+
+    // Copy text handler
+    card.querySelector(".copy-text").addEventListener("click", (e) => {
+      e.stopPropagation();
+      const tempDiv = document.createElement("div");
+      tempDiv.innerHTML = note.description;
+      const plainText = (tempDiv.textContent || tempDiv.innerText || "").trim();
+      navigator.clipboard.writeText(plainText).then(() => {
+        showToast("Update text copied to clipboard!");
+      });
     });
 
     // Copy link handler
